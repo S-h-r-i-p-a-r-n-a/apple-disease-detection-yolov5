@@ -4,18 +4,22 @@ import torch
 from PIL import Image
 import uuid
 import os
+from dotenv import load_dotenv
 
-# ✅ Fix for Windows path issue
+# ✅ Load environment variables from .env (only works locally)
+load_dotenv()
+
+# ✅ Fix for Windows path compatibility
 if platform.system() == "Windows":
     pathlib.PosixPath = pathlib.WindowsPath
 
-# ✅ GitHub token (optional but safe for Render)
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # if using .env in future
+# ✅ GitHub token from environment (for Render or local)
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 if GITHUB_TOKEN:
     torch.hub._DEFAULT_GITHUB_TOKEN = GITHUB_TOKEN
     torch.hub._validate_not_a_forked_repo = lambda *args, **kwargs: None
 
-# ✅ Static folder
+# ✅ Define static path
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
@@ -28,7 +32,7 @@ model = torch.hub.load(
     force_reload=True
 )
 
-# ✅ Treatments
+# ✅ Disease-treatment mapping
 TREATMENTS = {
     "Rust": "Use Myclobutanil fungicide. Remove infected leaves.",
     "Scab": "Use Captan or Mancozeb fungicides.",
@@ -36,27 +40,27 @@ TREATMENTS = {
 }
 
 def detect_disease(file):
-    # Clean static/
+    # ✅ Clean static/ folder
     for f in os.listdir(STATIC_DIR):
         try:
             os.remove(os.path.join(STATIC_DIR, f))
         except:
             pass
 
-    # Save input image
+    # ✅ Save uploaded image
     img = Image.open(file.file).convert("RGB")
     image_name = f"{uuid.uuid4().hex}.jpg"
     image_path = os.path.join(STATIC_DIR, image_name)
     img.save(image_path)
 
-    # Predict
+    # ✅ Run detection
     results = model(image_path)
-    rendered = results.render()[0]
 
-    # Save rendered image
+    # ✅ Render result with bounding boxes
+    rendered = results.render()[0]
     Image.fromarray(rendered).save(image_path)
 
-    # Read result
+    # ✅ Parse results
     df = results.pandas().xyxy[0]
     disease = df["name"][0].capitalize() if not df.empty else "Healthy"
     treatment = TREATMENTS.get(disease, "No treatment found.")
