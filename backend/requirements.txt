@@ -11,3 +11,4 @@ python-dotenv           # To manage environment variables (e.g., GitHub token)
 seaborn                 # (Optional) For advanced plots or heatmaps
 matplotlib              # (Optional) For visualizations
 pandas                  # Reading YOLO results, tabular formatting
+ultralytics
