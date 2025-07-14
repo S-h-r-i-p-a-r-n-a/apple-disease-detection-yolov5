@@ -1,35 +1,34 @@
-import os
 import platform
 import pathlib
-import sys
 import torch
-import uuid
 from PIL import Image
+import uuid
+import os
 
-# ✅ Fix PosixPath issue on Windows
+# ✅ Fix for Windows path issue
 if platform.system() == "Windows":
     pathlib.PosixPath = pathlib.WindowsPath
 
-# ✅ Define static path
+# ✅ GitHub token (optional but safe for Render)
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # if using .env in future
+if GITHUB_TOKEN:
+    torch.hub._DEFAULT_GITHUB_TOKEN = GITHUB_TOKEN
+    torch.hub._validate_not_a_forked_repo = lambda *args, **kwargs: None
+
+# ✅ Static folder
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
 os.makedirs(STATIC_DIR, exist_ok=True)
 
-# ✅ Add local yolov5 path to sys.path
-YOLOV5_PATH = os.path.join(os.path.dirname(__file__), "yolov5")
-sys.path.append(YOLOV5_PATH)
+# ✅ Load YOLOv5 model
+model = torch.hub.load(
+    'ultralytics/yolov5',
+    'custom',
+    path='model/best.pt',
+    source='github',
+    force_reload=True
+)
 
-# ✅ Import necessary modules from local yolov5
-from models.common import DetectMultiBackend
-from utils.datasets import LoadImages
-from utils.general import non_max_suppression, scale_coords
-from utils.torch_utils import select_device
-
-# ✅ Initialize model
-device = select_device('')
-model = DetectMultiBackend(weights='model/best.pt', device=device)
-model.eval()
-
-# ✅ Treatment recommendations
+# ✅ Treatments
 TREATMENTS = {
     "Rust": "Use Myclobutanil fungicide. Remove infected leaves.",
     "Scab": "Use Captan or Mancozeb fungicides.",
@@ -44,30 +43,22 @@ def detect_disease(file):
         except:
             pass
 
-    # Save image
+    # Save input image
     img = Image.open(file.file).convert("RGB")
     image_name = f"{uuid.uuid4().hex}.jpg"
     image_path = os.path.join(STATIC_DIR, image_name)
     img.save(image_path)
 
-    # Load image using LoadImages
-    dataset = LoadImages(image_path, img_size=640)
+    # Predict
+    results = model(image_path)
+    rendered = results.render()[0]
 
-    disease = "Healthy"
+    # Save rendered image
+    Image.fromarray(rendered).save(image_path)
 
-    for path, im, im0s, vid_cap, s in dataset:
-        im = torch.from_numpy(im).to(device).float() / 255.0
-        if im.ndimension() == 3:
-            im = im.unsqueeze(0)
+    # Read result
+    df = results.pandas().xyxy[0]
+    disease = df["name"][0].capitalize() if not df.empty else "Healthy"
+    treatment = TREATMENTS.get(disease, "No treatment found.")
 
-        pred = model(im, augment=False, visualize=False)
-        pred = non_max_suppression(pred, conf_thres=0.25, iou_thres=0.45)
-
-        for det in pred:
-            if len(det):
-                det[:, :4] = scale_coords(im.shape[2:], det[:, :4], im0s.shape).round()
-                disease = model.names[int(det[0][-1])]
-                break
-
-    treatment = TREATMENTS.get(disease.capitalize(), "No treatment found.")
-    return image_name, disease.capitalize(), treatment
+    return image_name, disease, treatment
